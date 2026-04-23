@@ -1,0 +1,40 @@
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: frachtwerk
+      POSTGRES_PASSWORD: frachtwerk
+      POSTGRES_DB: frachtwerk
+    ports:
+      - "5433:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U frachtwerk -d frachtwerk"]
+      interval: 5s
+      timeout: 5s
+      retries: 15
+
+  app:
+    build:
+      context: ./app
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://frachtwerk:frachtwerk@db:5432/frachtwerk
+      NODE_ENV: production
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      NEXT_TELEMETRY_DISABLED: "1"
+    ports:
+      - "3000:3000"
+    command: >
+      sh -c "node /app/node_modules/prisma/build/index.js db push --accept-data-loss --schema=/app/prisma/schema.prisma &&
+             node /app/node_modules/tsx/dist/cli.mjs /app/prisma/seed.ts &&
+             node /app/server.js"
+
+volumes:
+  pgdata:

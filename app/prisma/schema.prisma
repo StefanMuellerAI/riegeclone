@@ -1,0 +1,303 @@
+generator client {
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "linux-musl-openssl-3.0.x", "linux-musl", "debian-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id         String    @id @default(cuid())
+  email      String    @unique
+  name       String
+  role       UserRole  @default(OPERATOR)
+  customer   Customer? @relation(fields: [customerId], references: [id])
+  customerId String?
+  createdAt  DateTime  @default(now())
+}
+
+enum UserRole {
+  ADMIN
+  OPERATOR
+  CUSTOMER
+}
+
+model Customer {
+  id        String     @id @default(cuid())
+  name      String
+  color     String     @default("#1d4ed8")
+  logo      String?
+  shipments Shipment[]
+  users     User[]
+  quotes    Quote[]
+  createdAt DateTime   @default(now())
+}
+
+model Party {
+  id         String         @id @default(cuid())
+  name       String
+  type       PartyType
+  country    String
+  city       String?
+  address    String?
+  vatNumber  String?
+  asShipper  Shipment[]     @relation("shipper")
+  asConsignee Shipment[]    @relation("consignee")
+  createdAt  DateTime       @default(now())
+}
+
+enum PartyType {
+  SHIPPER
+  CONSIGNEE
+  NOTIFY
+  CARRIER
+  AGENT
+}
+
+model Shipment {
+  id             String          @id @default(cuid())
+  ref            String          @unique
+  mode           TransportMode
+  direction      Direction
+  status         ShipmentStatus  @default(BOOKED)
+  originCode     String
+  originName     String
+  originCountry  String
+  originLat      Float?
+  originLon      Float?
+  destCode       String
+  destName       String
+  destCountry    String
+  destLat        Float?
+  destLon        Float?
+  etd            DateTime
+  eta            DateTime
+  etaPredicted   DateTime?
+  delayRiskScore Int?             // 0-100
+  carrier        String
+  carrierCode    String?
+  mawb           String?
+  hbl            String?
+  vessel         String?
+  voyage         String?
+  flightNumber   String?
+  containerNos   String[]
+  weightKg       Float
+  volumeM3       Float
+  chargeableKg   Float
+  pieces         Int
+  incoterm       String
+  commodity      String
+  hsCodes        String[]
+  co2eKg         Float
+  dangerousGoods Boolean         @default(false)
+
+  customer       Customer?       @relation(fields: [customerId], references: [id])
+  customerId     String?
+  shipper        Party?          @relation("shipper", fields: [shipperId], references: [id])
+  shipperId      String?
+  consignee      Party?          @relation("consignee", fields: [consigneeId], references: [id])
+  consigneeId    String?
+
+  milestones     Milestone[]
+  documents      Document[]
+  customsDecs    CustomsDeclaration[]
+  quotes         Quote[]
+
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+}
+
+enum TransportMode {
+  AIR
+  OCEAN
+  ROAD
+}
+
+enum Direction {
+  IMPORT
+  EXPORT
+}
+
+enum ShipmentStatus {
+  QUOTED
+  BOOKED
+  IN_TRANSIT
+  AT_DESTINATION
+  CUSTOMS_CLEARANCE
+  DELIVERED
+  EXCEPTION
+  CANCELLED
+}
+
+model Milestone {
+  id          String   @id @default(cuid())
+  shipmentId  String
+  shipment    Shipment @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
+  code        String   // e.g. "DEP", "ARR", "CUSTOMS_CLEARED"
+  label       String
+  location    String?
+  timestamp   DateTime
+  source      String   // "AIRLINE_EDI", "AIS", "MANUAL", "OCR"
+  isFuture    Boolean  @default(false)
+  createdAt   DateTime @default(now())
+}
+
+model Document {
+  id             String    @id @default(cuid())
+  shipmentId     String?
+  shipment       Shipment? @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
+  type           String    // "BL", "AWB", "COMMERCIAL_INVOICE", "PACKING_LIST", "C/O"
+  filename       String
+  mimeType       String
+  sizeBytes      Int
+  extractedJson  Json?
+  extractionConfidence Float?
+  uploadedBy     String?
+  createdAt      DateTime  @default(now())
+}
+
+model CustomsDeclaration {
+  id         String            @id @default(cuid())
+  shipmentId String
+  shipment   Shipment          @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
+  regime     CustomsRegime
+  status     CustomsStatus     @default(DRAFT)
+  mrn        String?
+  deniedPartyCheck Boolean     @default(false)
+  submittedAt DateTime?
+  clearedAt  DateTime?
+  createdAt  DateTime          @default(now())
+}
+
+enum CustomsRegime {
+  ATLAS_DE
+  EDEC_CH
+  NCTS
+  AES_US
+  ISF_US
+  SAGITTA_NL
+}
+
+enum CustomsStatus {
+  DRAFT
+  SUBMITTED
+  ACCEPTED
+  CLEARED
+  REJECTED
+}
+
+model Quote {
+  id          String       @id @default(cuid())
+  ref         String       @unique
+  status      QuoteStatus  @default(OPEN)
+  mode        TransportMode
+  origin      String
+  destination String
+  incoterm    String
+  validUntil  DateTime
+  totalUsd    Float
+  linesJson   Json
+  customer    Customer?    @relation(fields: [customerId], references: [id])
+  customerId  String?
+  shipment    Shipment?    @relation(fields: [shipmentId], references: [id])
+  shipmentId  String?
+  createdAt   DateTime     @default(now())
+}
+
+enum QuoteStatus {
+  OPEN
+  SENT
+  ACCEPTED
+  DECLINED
+  EXPIRED
+}
+
+model Workflow {
+  id           String   @id @default(cuid())
+  name         String
+  description  String?
+  enabled      Boolean  @default(true)
+  triggerJson  Json
+  stepsJson    Json
+  runsLast7d   Int      @default(0)
+  createdAt    DateTime @default(now())
+}
+
+model CbamReport {
+  id                      String   @id @default(cuid())
+  period                  String   // "2026-Q1"
+  status                  String   @default("DRAFT")
+  cnCodes                 String[]
+  totalEmbeddedEmissionsT Float
+  submittedAt             DateTime?
+  createdAt               DateTime @default(now())
+}
+
+model Alert {
+  id         String   @id @default(cuid())
+  level      String   // "info", "warning", "critical"
+  title      String
+  body       String
+  shipmentId String?
+  acked      Boolean  @default(false)
+  createdAt  DateTime @default(now())
+}
+
+model Notification {
+  id         String    @id @default(cuid())
+  level      String    // "info", "success", "warning", "critical"
+  title      String
+  body       String?
+  shipmentId String?
+  href       String?
+  readAt     DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@index([createdAt])
+  @@index([readAt])
+}
+
+model NotificationLog {
+  id         String   @id @default(cuid())
+  channel    String   // "slack", "email", "webhook"
+  to         String
+  subject    String?
+  body       String
+  shipmentId String?
+  sentAt     DateTime @default(now())
+}
+
+model WorkflowRun {
+  id          String   @id @default(cuid())
+  workflowId  String
+  status      String   // "running", "success", "failed"
+  stepsJson   Json
+  startedAt   DateTime @default(now())
+  finishedAt  DateTime?
+}
+
+model WorldClock {
+  id                String   @id @default("singleton")
+  epochRealStart    DateTime @default(now())
+  epochVirtualStart DateTime @default(now())
+  compression       Int      @default(60) // 60x: 1 real minute = 60 virtual minutes
+  ticks             Int      @default(0)
+  lastTickAt        DateTime @default(now())
+}
+
+model CarrierRate {
+  id          String   @id @default(cuid())
+  carrier     String
+  carrierCode String
+  origin      String
+  destination String
+  mode        TransportMode
+  transitDays Int
+  basePerKg   Float?
+  basePerContainer Float?
+  validUntil  DateTime
+  co2ePerKg   Float
+}

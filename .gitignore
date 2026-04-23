@@ -1,0 +1,10 @@
+.env
+.env.local
+.env.*.local
+app/node_modules/
+app/.next/
+app/.env
+app/tsconfig.tsbuildinfo
+.DS_Store
+*.log
+.claude/
